@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#14100e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Phone Bridge">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-418.png">
+<link rel="icon" href="/icon-418.png">
+<title>Phone Bridge</title>
+<style>
+  :root{
+    --bg:#14100e; --bg2:#1c1714; --line:#2c2420;
+    --ink:#f0e6dc; --dim:#a89c92; --faint:#6f635b;
+    --warm:#e8b06a; --warm2:#8a6a42;
+    --cold:#6ea8a0;
+    --think:#9c8f83;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%; margin:0; overflow:hidden}   /* 页面本身不滚，只有消息区滚 */
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex; flex-direction:column; overscroll-behavior-y:contain;
+  }
+  /* ---------- 顶栏 ---------- */
+  header{
+    position:sticky; top:0; z-index:20;
+    display:flex; align-items:center; gap:10px;
+    padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    background:linear-gradient(180deg, rgba(20,16,14,.97), rgba(20,16,14,.82));
+    backdrop-filter:blur(12px); border-bottom:1px solid var(--line);
+  }
+  header .name{font-weight:600; letter-spacing:.06em}
+  header .sub{font-size:11.5px; color:var(--faint); margin-left:auto}
+  .dot{width:8px;height:8px;border-radius:50%;background:#7a3a3a; box-shadow:0 0 8px #000}
+  .dot.on{background:#6fbf9a; box-shadow:0 0 10px rgba(111,191,154,.6)}
+  .dot.mid{background:#c9a24a}
+  header button.menu{
+    background:none;border:1px solid var(--line);color:var(--dim);
+    border-radius:8px;padding:5px 9px;font-size:12px;margin-left:8px
+  }
+  /* ---------- 消息区 ---------- */
+  .stage{flex:1; position:relative; display:flex; min-height:0}
+  main{flex:1; overflow-y:auto; padding:14px 12px 8px; -webkit-overflow-scrolling:touch}
+  main::-webkit-scrollbar{width:0; height:0}   /* 别露那根条子 */
+
+  /* 不在最新处才露出来的「回到最新」 */
+  .fab{
+    position:absolute; right:12px; bottom:12px;
+    width:38px; height:38px; padding:0; border-radius:50%;
+    background:#231c18; border:1px solid var(--line); color:var(--dim);
+    font-size:16px; line-height:1;
+    box-shadow:0 4px 16px rgba(0,0,0,.5);
+  }
+  .fab:active{background:#2c231e}
+
+  /* ---------- 对话记录 ---------- */
+  #toc{
+    position:fixed; inset:0; z-index:60;
+    background:rgba(0,0,0,.5);
+    display:flex; justify-content:flex-end;      /* 从右边出来 */
+    opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  #toc.open{opacity:1; pointer-events:auto}
+  #toc .panel{
+    width:76%; max-width:320px; height:100%;
+    background:#1c1714; border-left:1px solid var(--line);
+    display:flex; flex-direction:column;
+    padding-top:calc(env(safe-area-inset-top) + 6px);
+    padding-bottom:calc(env(safe-area-inset-bottom) + 6px);
+    transform:translateX(100%);
+    transition:transform .26s cubic-bezier(.2,.8,.3,1);
+  }
+  #toc.open .panel{transform:none}
+  #toc .ph{
+    display:flex; align-items:center;
+    padding:14px 16px 10px 18px; font-size:12.5px; color:var(--faint);
+    letter-spacing:.1em; border-bottom:1px solid var(--line);
+  }
+  #toc .ph button{
+    margin-left:auto; padding:0 2px; background:none; border:none;
+    color:var(--faint); font-size:20px; line-height:1;
+  }
+  #toc .pl{flex:1; overflow-y:auto; padding:6px 0 2px}
+  #toc .row{
+    display:block; width:100%; text-align:left;
+    background:none; border:none; color:var(--ink);
+    font:inherit; font-size:14px; padding:11px 18px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  #toc .row:active{background:#241d19}
+  .msg{margin:0 0 12px; max-width:100%; animation:in .22s ease}
+  @keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .bubble{border-radius:14px; padding:9px 13px; word-break:break-word; white-space:pre-wrap}
+  .user{background:#232d2b; border:1px solid #2e3d3a; color:#dceeea; margin-left:auto; max-width:86%}
+  .assistant{background:var(--bg2); border:1px solid var(--line); max-width:94%}
+
+  .thinking{
+    max-width:94%; border-left:2px solid var(--warm2);
+    padding:5px 0 5px 11px; margin:0 0 12px 2px;
+    color:var(--think); font-style:italic; font-size:13.5px; line-height:1.7; white-space:pre-wrap;
+  }
+  .thinking .tag{font-style:normal;font-size:11px;letter-spacing:.14em;color:var(--faint);display:block;margin-bottom:2px}
+
+  .tool{max-width:94%; font-size:12.5px; color:var(--faint); padding:2px 0 2px 12px;
+        border-left:2px solid #2a2320; margin:0 0 8px 2px; font-family:ui-monospace,Consolas,monospace}
+  .tool b{color:var(--dim); font-weight:500}
+  .result{max-width:94%; font-size:12px; color:#5d534c; padding:2px 0 2px 12px;
+          border-left:2px solid #241e1b; margin:0 0 8px 2px;
+          font-family:ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-all}
+  .stamp{font-size:10.5px; color:#4a423d; margin:2px 0 10px 4px}
+
+  /* 表情包（assistant 发来的图） */
+  .bubble.sticker{padding:0; background:none; border:none}
+  .bubble.sticker img{display:block; max-width:min(220px, 64vw); border-radius:14px}
+
+  /* 文件（assistant 发来的）：点一下下载 */
+  .bubble.file{
+    display:inline-flex; align-items:center; gap:8px;
+    background:#1d1815; border:1px solid var(--line); color:var(--warm);
+    text-decoration:none; font-size:13.5px; max-width:94%;
+  }
+  .bubble.file:active{background:#261f1a}
+  .bubble.file .sz{color:var(--faint); font-size:11.5px}
+
+  /* 自己发出去的图 / 文件：跟自己的话一边，右对齐 */
+  .bubble.user-img{padding:0; background:none; border:none; margin-left:auto}
+  .bubble.user-img img{display:block; max-width:min(240px, 66vw); border-radius:14px}
+  .bubble.user-file{margin-left:auto}
+
+  /* 折叠档位 */
+  body.hide-think .thinking{display:none}
+  body.hide-tool .tool,body.hide-tool .result{display:none}
+
+  /* ---------- 发送区（照 deepseek 手机版排的） ---------- */
+  footer{
+    border-top:1px solid var(--line); background:rgba(20,16,14,.97);
+    backdrop-filter:blur(12px);
+    padding:9px 10px calc(env(safe-area-inset-bottom) + 9px);
+    display:flex; flex-direction:column; gap:9px;
+  }
+  .composer{
+    background:#1d1815; border:1px solid var(--line); border-radius:18px;
+    padding:8px 8px 7px 13px;
+    display:flex; flex-direction:column; gap:7px;
+  }
+  .composer textarea{
+    resize:none; background:none; border:none; color:var(--ink);
+    padding:2px 4px 0 0; font:inherit; font-size:15px;
+    line-height:1.5; min-height:24px; max-height:132px;
+  }
+  .composer textarea:focus{outline:none}
+
+  .bar{display:flex; align-items:center; gap:7px}
+  .pill{
+    background:#231c18; border:1px solid var(--line); color:var(--dim);
+    border-radius:999px; padding:5px 12px; font:inherit; font-size:12.5px;
+  }
+  .pill.on{color:var(--warm); border-color:var(--warm2)}
+  .bar .right{margin-left:auto; display:flex; align-items:center; gap:8px}
+  .icon{
+    width:34px; height:34px; padding:0; border-radius:50%;
+    background:none; border:1.5px solid var(--line); color:var(--dim);
+    font-size:19px; line-height:1;
+    transition:transform .24s cubic-bezier(.2,.8,.3,1), color .2s, border-color .2s;
+  }
+  .icon.open{transform:rotate(45deg); color:var(--warm); border-color:var(--warm2)}
+  .send{
+    width:34px; height:34px; padding:0; border:none; border-radius:50%;
+    background:linear-gradient(180deg,#e8b06a,#c9903f); color:#241a0d;
+    font-size:16px; font-weight:700;
+  }
+  .send:disabled{opacity:.4}
+
+  /* 点 + 滑出来：图片 / 文件 */
+  #sheet{
+    display:flex; gap:8px; overflow:hidden;
+    max-height:0; opacity:0; transform:translateY(8px);
+    transition:max-height .24s cubic-bezier(.2,.8,.3,1),
+               opacity .18s ease, transform .24s cubic-bezier(.2,.8,.3,1);
+  }
+  #sheet.open{max-height:120px; opacity:1; transform:none}
+  #sheet button{
+    flex:1; background:#1d1815; border:1px solid var(--line); border-radius:14px;
+    color:var(--ink); padding:11px 0; font:inherit; font-size:12.5px;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  #sheet button svg{display:block; width:22px; height:22px}
+
+  /* ---------- 待发送区（选好了先攒着，配好字再一起发） ---------- */
+  #tray{display:flex; gap:6px; overflow-x:auto}
+  .chip{position:relative; flex:0 0 auto; width:78px; height:78px; border-radius:10px;
+        overflow:hidden; border:1px solid var(--line); background:#231c18}
+  .chip img{width:100%; height:100%; object-fit:cover; display:block}
+  .chip .nm{position:absolute; left:0; right:0; bottom:0; font-size:9px; color:#d9cec2;
+            background:rgba(0,0,0,.58); padding:1px 3px;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .chip .x{position:absolute; top:2px; right:2px; width:19px; height:19px; padding:0;
+           border:none; border-radius:50%; background:rgba(0,0,0,.72); color:#f0e6dc;
+           font-size:12px; line-height:19px; text-align:center}
+
+  /* ---------- 口令遮罩 ---------- */
+  #gate{
+    position:fixed; inset:0; z-index:100; background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; padding:28px; text-align:center;
+  }
+  #gate h1{font-size:19px; font-weight:600; letter-spacing:.1em; margin:0}
+  #gate p{color:var(--faint); font-size:13px; margin:0; line-height:1.8}
+  #gate input{
+    width:100%; max-width:280px; background:#1d1815; border:1px solid var(--line);
+    color:var(--ink); border-radius:12px; padding:13px 14px; font:inherit; text-align:center; letter-spacing:.14em;
+  }
+  #gate input:focus{outline:none;border-color:var(--warm2)}
+  #gate button{
+    background:linear-gradient(180deg,#e8b06a,#c9903f); color:#241a0d; border:none;
+    border-radius:12px; padding:12px 30px; font-weight:700; font:inherit;
+  }
+  #gate .err{color:#d98b7a; font-size:12.5px; min-height:18px}
+  #gate .candle{font-size:30px; filter:drop-shadow(0 0 18px rgba(232,176,106,.5))}
+  .hidden{display:none !important}
+</style>
+</head>
+<body class="hide-tool hide-think">
+
+<!-- 口令门 -->
+<div id="gate">
+  <div class="candle">🕯</div>
+  <h1>PHONE BRIDGE</h1>
+  <p>Enter your access key.<br>It is printed in the terminal.</p>
+  <input id="gateKey" type="password" placeholder="口令" autocomplete="off" enterkeyhint="go">
+  <button id="gateBtn">进 门</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<!-- 主体 -->
+<header>
+  <span class="dot" id="dot"></span>
+  <span class="name">Bridge</span>
+  <span class="sub" id="state">连接中…</span>
+  <button class="menu" id="btnToc" title="对话记录">≡</button>
+</header>
+
+<div class="stage">
+  <main id="feed"></main>
+  <button id="btnJump" class="fab hidden" title="回到最新">↓</button>
+</div>
+
+<!-- 对话记录：只列他发过的，点一条跳过去 -->
+<div id="toc">
+  <div class="panel">
+    <div class="ph">对话记录<button id="tocClose" title="收起">×</button></div>
+    <div class="pl" id="tocList"></div>
+  </div>
+</div>
+
+<footer>
+  <div class="composer">
+    <div id="tray" class="hidden"></div>
+    <textarea id="box" rows="1" placeholder="说点什么…" enterkeyhint="send"></textarea>
+    <div class="bar">
+      <button class="pill" id="btnThink">思考</button>
+      <button class="pill" id="btnTool">动作</button>
+      <div class="right">
+        <button class="icon" id="btnPlus" title="发图 / 文件">+</button>
+        <button class="send" id="send" disabled title="发送">↑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 点 + 滑出来 -->
+  <div id="sheet">
+    <button id="btnImage"><svg viewBox="0 0 1024 1024" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M291 354m-42 0a42 42 0 1 0 84 0 42 42 0 1 0-84 0ZM811.78 828H219.22A97.33 97.33 0 0 1 122 730.78V292.22A97.33 97.33 0 0 1 219.22 195h592.56A97.33 97.33 0 0 1 909 292.22v438.56A97.33 97.33 0 0 1 811.78 828zM219.22 245A47.27 47.27 0 0 0 172 292.22v438.56A47.27 47.27 0 0 0 219.22 778h592.56A47.27 47.27 0 0 0 859 730.78V292.22A47.27 47.27 0 0 0 811.78 245zM161 674.35a25 25 0 0 1-15.37-44.73L352.79 468.5a71.45 71.45 0 0 1 84.51-2.56l69.86 47.84a21.8 21.8 0 0 0 26-1.13l164.33-135a71.44 71.44 0 0 1 96.19 4.7l103 103a25 25 0 1 1-35.35 35.35l-103-103a21.59 21.59 0 0 0-29.09-1.42l-164.33 135a72.06 72.06 0 0 1-86 3.76l-69.86-47.85a21.6 21.6 0 0 0-25.56 0.78L176.35 669.08a24.89 24.89 0 0 1-15.35 5.27zM783.72 725H341.06a25 25 0 1 1 0-50h442.66a25 25 0 0 1 0 50zM783.72 634H620a25 25 0 0 1 0-50h163.72a25 25 0 0 1 0 50z"/></svg>图片</button>
+    <button id="btnFile"><svg viewBox="0 0 1024 1024" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M912 208H427.872l-50.368-94.176A63.936 63.936 0 0 0 321.056 80H112c-35.296 0-64 28.704-64 64v736c0 35.296 28.704 64 64 64h800c35.296 0 64-28.704 64-64v-608c0-35.296-28.704-64-64-64zm-800-64h209.056l68.448 128H912v97.984c-0.416 0-0.8-0.128-1.216-0.128H113.248c-0.416 0-0.8 0.128-1.248 0.128V144zm0 736v-96l1.248-350.144 798.752 1.216V784h0.064v96H112z"/></svg>文件</button>
+  </div>
+</footer>
+
+<input type="file" id="pickImage" accept="image/*" multiple class="hidden">
+<input type="file" id="pickFile"  multiple class="hidden">
+
+<script>
+const $ = s => document.querySelector(s);
+let KEY = localStorage.getItem('bridge.key') || '';
+let es = null;
+let atBottom = true;
+const feed = $('#feed');
+
+// ---------- 工具 ----------
+function fmtTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  return d.toTimeString().slice(0,5);
+}
+function esc(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function withKey(u){ return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(KEY); }
+
+// 极简 markdown：粗体 / 行内码 / 代码块
+function md(s){
+  let h = esc(s);
+  h = h.replace(/```([\s\S]*?)```/g, (m, c) => `<span class="code">${c.trim()}</span>`);
+  h = h.replace(/`([^`\n]+)`/g, '<span class="code">$1</span>');
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  return h;
+}
+
+function nearBottom(){
+  return feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
+}
+function toBottom(){
+  // 手机上布局是滞后的：刚插进来的东西、刚弹出来的键盘，
+  // scrollHeight 都要等一两帧才准。所以连着滚三次。
+  const go = () => { feed.scrollTop = feed.scrollHeight; };
+  go();
+  requestAnimationFrame(go);
+  setTimeout(go, 60);
+}
+
+// ---------- 渲染 ----------
+function add(ev){
+  const stick = nearBottom();
+  const el = document.createElement('div');
+
+  if (ev.kind === 'thinking'){
+    el.className = 'thinking';
+    el.innerHTML = '<span class="tag">思考</span>' + esc(ev.text);
+  } else if (ev.kind === 'assistant'){
+    el.className = 'msg';
+    el.innerHTML = '<div class="bubble assistant">' + md(ev.text) + '</div>';
+  } else if (ev.kind === 'user'){
+    el.className = 'msg';
+    el.innerHTML = '<div class="bubble user">' + md(ev.text) + '</div>';
+  } else if (ev.kind === 'tool'){
+    el.className = 'tool';
+    el.innerHTML = '▸ ' + esc(ev.text);
+  } else if (ev.kind === 'result'){
+    el.className = 'result';
+    el.textContent = ev.text;
+  } else if (ev.kind === 'image'){
+    // assistant 发来的表情 / 图
+    el.className = 'msg';
+    const box = document.createElement('div');
+    box.className = 'bubble sticker';
+    const img = document.createElement('img');
+    img.src = ev.url + (ev.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(KEY);
+    img.alt = ev.alt || '表情';
+    img.loading = 'lazy';
+    img.onerror = () => { box.textContent = '（这张图没加载出来）'; };
+    box.appendChild(img);
+    el.appendChild(box);
+  } else if (ev.kind === 'file'){
+    // assistant 发来的文件：点一下下载
+    el.className = 'msg';
+    const a = document.createElement('a');
+    a.className = 'bubble file';
+    a.href = ev.url + (ev.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(KEY);
+    a.textContent = '📄 ' + (ev.name || '文件');
+    const sz = document.createElement('span');
+    sz.className = 'sz';
+    sz.textContent = ev.size
+      ? (ev.size > 1048576 ? (ev.size / 1048576).toFixed(1) + ' MB'
+                           : Math.max(1, Math.round(ev.size / 1024)) + ' KB')
+      : '';
+    a.appendChild(sz);
+    el.appendChild(a);
+  } else if (ev.kind === 'user-image' || ev.kind === 'user-file'){
+    // 自己发出去的图 / 文件：跟自己的话一边，右对齐
+    // （本地先插过一张，转录绕一圈回来时按 url 去重）
+    if (ev.url && feed.querySelector('[data-media="' + CSS.escape(ev.url) + '"]')) return;
+    el.className = 'msg';
+    const a = document.createElement('a');
+    a.className = 'bubble ' + (ev.kind === 'user-image' ? 'user-img' : 'file user-file');
+    a.href = withKey(ev.url);
+    a.target = '_blank';
+    a.dataset.media = ev.url || '';
+    if (ev.kind === 'user-image'){
+      const img = document.createElement('img');
+      img.src = withKey(ev.url);
+      img.alt = ev.note || '图片';
+      img.loading = 'lazy';
+      img.onerror = () => { a.textContent = '（这张图没加载出来）'; };
+      a.appendChild(img);
+    } else {
+      a.textContent = '📄 ' + (ev.name || '文件');
+      const sz = document.createElement('span');
+      sz.className = 'sz';
+      sz.textContent = ev.size
+        ? (ev.size > 1048576 ? (ev.size / 1048576).toFixed(1) + ' MB'
+                             : Math.max(1, Math.round(ev.size / 1024)) + ' KB')
+        : '';
+      a.appendChild(sz);
+    }
+    el.appendChild(a);
+  } else {
+    return;
+  }
+  feed.appendChild(el);
+  if (stick) toBottom();
+}
+
+function setState(txt, cls){
+  $('#state').textContent = txt;
+  $('#dot').className = 'dot' + (cls ? ' ' + cls : '');
+}
+
+// ---------- 上行 ----------
+async function send(){
+  const box = $('#box');
+  const text = box.value.trim();
+
+  // 待发送区里有东西：连字一起送走
+  if (pending.length){
+    const list = pending.map(x => x.file);
+    pending.forEach(x => { if (x.preview) URL.revokeObjectURL(x.preview); });
+    pending = [];
+    renderTray();
+    box.value = ''; box.style.height = 'auto'; $('#send').disabled = true;
+    await upload(list, text);
+    return;
+  }
+
+  if (!text) return;
+  box.value = ''; box.style.height = 'auto';
+  $('#send').disabled = true;
+  try{
+    const r = await fetch('/api/send', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Bridge-Key':KEY},
+      body: JSON.stringify({ text })
+    });
+    if(!r.ok){
+      const j = await r.json().catch(()=>({}));
+      alert('发送失败：' + (j.error || r.status));
+    }
+  }catch(e){
+    alert('发送失败：' + e.message);
+  }finally{
+    $('#send').disabled = false;
+  }
+}
+
+// ---------- 实时流 ----------
+function connect(){
+  if (es) es.close();
+  fetch('/api/history?limit=80', {headers:{'X-Bridge-Key':KEY}})
+    .then(r => r.json())
+    .then(list => { feed.innerHTML = ''; list.forEach(add); toBottom(); })
+    .catch(()=>{});
+
+  es = new EventSource('/api/stream?key=' + encodeURIComponent(KEY));
+  es.onopen = () => setState('连着', 'on');
+  es.onerror = () => setState('断开了，自动重连…', 'mid');
+  es.onmessage = e => {
+    try{ add(JSON.parse(e.data)); }catch{}
+  };
+}
+
+// ---------- 口令 ----------
+async function tryKey(k){
+  const r = await fetch('/api/auth', {headers:{'X-Bridge-Key':k}});
+  return r.ok;
+}
+$('#gateBtn').onclick = async () => {
+  const k = $('#gateKey').value.trim();
+  if(!k) return;
+  $('#gateErr').textContent = '…';
+  if(await tryKey(k)){
+    KEY = k; localStorage.setItem('bridge.key', k);
+    $('#gate').classList.add('hidden');
+    connect();
+  } else {
+    $('#gateErr').textContent = '口令不对，再想想';
+  }
+};
+$('#gateKey').addEventListener('keydown', e => { if(e.key==='Enter') $('#gateBtn').click(); });
+
+// ---------- 待发送区：选好的先攒着，配好字再一起发 ----------
+let pending = [];
+
+function syncSend(){
+  $('#send').disabled = !pending.length && !$('#box').value.trim();
+}
+
+function renderTray(){
+  const t = $('#tray');
+  t.innerHTML = '';
+  if (!pending.length){ t.classList.add('hidden'); syncSend(); return; }
+  t.classList.remove('hidden');
+  pending.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'chip';
+    if (it.preview){
+      const im = document.createElement('img');
+      im.src = it.preview;
+      d.appendChild(im);
+    }
+    const nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = it.file.name || '文件';
+    d.appendChild(nm);
+    const x = document.createElement('button');
+    x.className = 'x'; x.type = 'button'; x.textContent = '×';
+    x.onclick = () => {
+      if (it.preview) URL.revokeObjectURL(it.preview);
+      pending.splice(i, 1);
+      renderTray();
+    };
+    d.appendChild(x);
+    t.appendChild(d);
+  });
+  syncSend();
+}
+
+function addPending(files){
+  for (const f of files){
+    if (!f) continue;
+    pending.push({ file: f, preview: looksLikeImage(f) ? URL.createObjectURL(f) : '' });
+  }
+  renderTray();
+}
+
+// ---------- 上行：图片 / 文件 ----------
+const MAX_EDGE = 2000;     // 图长边压到这么多：够看清，又不浪费
+const MAX_MB   = 25;
+
+function blobToDataUrl(blob){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(new Error('读不出这个文件'));
+    fr.readAsDataURL(blob);
+  });
+}
+
+// 图先过一遍 canvas —— 不管源文件是 HEIC、索引色 PNG 还是别的，
+// 出门的永远是 API 吃得下的 8-bit 真彩 JPEG。
+// （2026-10-10 那颗 88 字节的雷，治的就是"原样上送"这一步。）
+async function shrink(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('这张图解不出来（可能是 HEIC 或坏文件）'));
+      im.src = url;
+    });
+    const scale = Math.min(1, MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.85));
+    if (!blob) throw new Error('转不成 JPEG');
+    const base = (file.name || 'photo').replace(/\.[^.]+$/, '');
+    return { blob, name: base + '.jpg', w, h };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function looksLikeImage(file){
+  if ((file.type || '').startsWith('image/')) return true;
+  return /\.(png|jpe?g|gif|webp|heic|heif|bmp|avif|tiff?)$/i.test(file.name || '');
+}
+
+async function uploadOne(file, caption){
+  if (!file) return null;
+  if (file.size > MAX_MB * 1024 * 1024){
+    alert((file.name || '这个文件') + ' 太大了（超过 ' + MAX_MB + 'MB）');
+    return null;
+  }
+
+  let dataUrl, outName = file.name || 'file';
+  if (looksLikeImage(file)){
+    setState('正在把图收拾干净…', 'mid');
+    try{
+      const s = await shrink(file);
+      outName = s.name;
+      dataUrl = await blobToDataUrl(s.blob);
+    }catch(e){
+      alert('这张图我收拾不了：' + e.message + '\n（先截个屏再发，或者换个格式）');
+      return null;
+    }
+  } else {
+    setState('正在送你那个…', 'mid');
+    try{ dataUrl = await blobToDataUrl(file); }
+    catch(e){ alert(e.message); return null; }
+  }
+
+  try{
+    const r = await fetch('/api/upload', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Bridge-Key':KEY},
+      body: JSON.stringify({ name: outName, caption, dataUrl })
+    });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok){ alert('没收：' + (j.error || r.status)); return null; }
+    // 拿回它在收件箱里的位置：好让自己这边也立刻看见这一张
+    return {
+      url: '/inbox?f=' + encodeURIComponent(String(j.path || '').split(/[\\/]/).pop()),
+      size: j.size || null,
+    };
+  }catch(e){
+    alert('发送失败：' + e.message);
+    return null;
+  }
+}
+
+async function upload(files, caption){
+  const list = Array.from(files || []).filter(Boolean);
+  if (!list.length) return;
+  let ok = 0;
+  for (const f of list){
+    if (list.length > 1) setState('正在送第 ' + (ok + 1) + ' / ' + list.length + ' 个…', 'mid');
+    const got = await uploadOne(f, caption);
+    if (got){
+      ok++;
+      // 先在自己这边落一张，不用等转录绕一圈回来
+      add({
+        kind: looksLikeImage(f) ? 'user-image' : 'user-file',
+        url: got.url, name: f.name || '文件', size: got.size, note: caption, ts: Date.now(),
+      });
+    }
+  }
+  setState(ok ? (ok > 1 ? '都送到了' : '送到了') : '发失败了', ok ? 'on' : '');
+}
+
+function closeSheet(){
+  $('#sheet').classList.remove('open');
+  $('#btnPlus').classList.remove('open');
+}
+
+function wirePick(btnId, inputId){
+  $(btnId).onclick = () => $(inputId).click();
+  $(inputId).addEventListener('change', e => {
+    addPending(Array.from(e.target.files || []));
+    e.target.value = '';
+    closeSheet();                        // 选完就滑回去
+  });
+}
+wirePick('#btnImage', '#pickImage');
+wirePick('#btnFile',  '#pickFile');
+
+// 点 + 滑出来（+ 自己也转成 ×）
+$('#btnPlus').onclick = () => {
+  const on = !$('#sheet').classList.contains('open');
+  $('#sheet').classList.toggle('open', on);
+  $('#btnPlus').classList.toggle('open', on);
+};
+
+// ---------- 交互 ----------
+$('#box').addEventListener('input', function(){
+  this.style.height='auto'; this.style.height=Math.min(this.scrollHeight,132)+'px';
+  syncSend();
+  keepBottom();
+});
+$('#box').addEventListener('keydown', e => {
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); if(!$('#send').disabled) send(); }
+});
+$('#send').onclick = send;
+feed.addEventListener('scroll', () => {
+  atBottom = nearBottom();
+  $('#btnJump').classList.toggle('hidden', atBottom);   // 在最新处就不露那个↓
+});
+
+// ---------- 对话记录：只列他发过的，点一条跳过去 ----------
+function buildToc(){
+  const list = $('#tocList');
+  list.innerHTML = '';
+  const rows = feed.querySelectorAll('.bubble.user');
+  if (!rows.length){
+    const e = document.createElement('div');
+    e.className = 'row';
+    e.style.color = 'var(--faint)';
+    e.textContent = '还没有你的话';
+    list.appendChild(e);
+    return;
+  }
+  rows.forEach(b => {
+    const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+    const row = document.createElement('button');
+    row.className = 'row';
+    row.textContent = t.length > 15 ? t.slice(0, 15) + '…' : t;
+    row.onclick = () => {
+      closeToc();
+      (b.closest('.msg') || b).scrollIntoView({ behavior:'smooth', block:'center' });
+    };
+    list.appendChild(row);
+  });
+}
+function openToc(){ buildToc(); $('#toc').classList.add('open'); }
+function closeToc(){ $('#toc').classList.remove('open'); }
+
+$('#btnToc').onclick = openToc;
+$('#tocClose').onclick = closeToc;
+$('#toc').onclick = e => { if (e.target === $('#toc')) closeToc(); };   // 点左边暗处关掉
+$('#btnJump').onclick = () => {
+  toBottom();
+  atBottom = true;
+  $('#btnJump').classList.add('hidden');
+};
+
+// 键盘弹起 / 输入框长高 / 视口变了：本来贴着底就跟着滚，不然消息会被顶上去
+function keepBottom(){ if (atBottom) toBottom(); }
+window.addEventListener('resize', keepBottom);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', keepBottom);
+// 图加载完会把内容顶高，也得跟着滚（load 不冒泡，用捕获）
+feed.addEventListener('load', keepBottom, true);
+
+$('#btnThink').onclick = e => {
+  document.body.classList.toggle('hide-think');
+  e.target.classList.toggle('on', !document.body.classList.contains('hide-think'));
+};
+$('#btnTool').onclick = e => {
+  document.body.classList.toggle('hide-tool');
+  e.target.classList.toggle('on', !document.body.classList.contains('hide-tool'));
+};
+
+// ---------- 起步 ----------
+(async () => {
+  if (KEY && await tryKey(KEY)){
+    $('#gate').classList.add('hidden');
+    connect();
+  } else {
+    localStorage.removeItem('bridge.key');
+    $('#gateKey').focus();
+  }
+})();
+</script>
+</body>
+</html>

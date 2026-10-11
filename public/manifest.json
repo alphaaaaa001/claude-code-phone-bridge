@@ -1,0 +1,15 @@
+{
+  "name": "Phone Bridge",
+  "short_name": "Phone Bridge",
+  "description": "A phone-friendly web app for your local coding session, over LAN.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14100e",
+  "theme_color": "#14100e",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/icon-418.png", "sizes": "418x418", "type": "image/png", "purpose": "any" }
+  ]
+}

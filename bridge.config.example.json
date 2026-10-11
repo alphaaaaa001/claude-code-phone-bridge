@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy this to bridge.config.json and edit. Paths are relative to `root`. Everything is empty by default — the bridge hands over nothing until you say so.",
+
+  "root": "..",
+
+  "media": ["stickers", "memes"],
+
+  "allow": ["notes", "projects", "docs"],
+
+  "deny": ["notes/private", "docs/keys"]
+}

@@ -1,0 +1,17 @@
+# 你的配置——只属于你这台机器
+bridge.config.json
+
+# 门口令：每次启动自动生成
+key.txt
+
+# 手机发来的东西
+inbox/
+
+# 自签证书和私钥
+certs/
+
+# 杂物
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
