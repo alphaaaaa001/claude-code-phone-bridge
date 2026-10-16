@@ -1,0 +1,41 @@
+name: 发布静态页到 GitHub Pages
+
+# 这个仓库的网页在 public/ 里。
+# 而 Pages 的「Deploy from a branch」只认仓库根目录 / 或 /docs，
+# 所以走 Actions 这条路：由它把 public/ 打包成 Pages 制品发出去。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # 也能在网页上手动点一下跑
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个发布，新的把旧的挤掉
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 告诉 Pages 这次部署的地址
+        uses: actions/configure-pages@v5
+
+      - name: 把 public/ 打包成 Pages 制品
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: 发布
+        id: deployment
+        uses: actions/deploy-pages@v4
